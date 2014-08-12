@@ -54,7 +54,7 @@ class Tester:
 
     Initiate with the following optional arguments:
 
-    :param checkHtml: bool (default=True). Specify whether to load tidylib and
+    :param check_html: bool (default=True). Specify whether to load tidylib and
         perform validation of html documentation
     :param executable: {'dymola', 'omc'}.  Default is 'dymola', specifies the
         executable to use for running the regression test with :func:`~buildingspy.development.Tester.run`.
@@ -157,9 +157,15 @@ class Tester:
         self._reporter = rep.Reporter(os.path.join(os.getcwd(), "unitTests.log"))
 
         self._rootPackage = os.path.join(self._libHome, 'Resources', 'Scripts', 'Dymola')
-        
+
         # By default, do not include export of FMUs.
         self._include_fmu_test = False
+        
+        # Variable that contains the figure size in inches.
+        # This variable is set after the first plot has been rendered.
+        # If a user resizes the plot, then the next plot will be displayed with
+        # the same size.
+        self._figSize = None
 
     def setLibraryRoot(self, rootDir):
         ''' Set the root directory of the library.
@@ -238,7 +244,7 @@ class Tester:
 
     def include_fmu_tests(self, fmu_export):
         ''' Sets a flag that, if ``True``, also tests the export of FMUs.
-        
+
         :param fmu_export: Set to ``True`` to test the export of FMUs.
 
         To run the unit tests and also test the export of FMUs, type
@@ -250,7 +256,7 @@ class Tester:
 
         '''
         self._include_fmu_test = fmu_export
-        
+
     def getModelicaCommand(self):
         ''' Return the name of the modelica executable.
 
@@ -411,7 +417,7 @@ class Tester:
             msg = """Requested to test only package '%s', but directory
 '%s' does not exist.""" % (packageName, rooPat)
             raise ValueError(msg)
-        
+
         self._rootPackage = rooPat
 
     def setDataDictionary(self):
@@ -665,15 +671,15 @@ class Tester:
         if (abs(tOld[-1]-tNew[-1]) > 1E-5):
             msg = """The new results and the reference results have a different end time.
             tNew = [%d, %d]
-            tOld = [%d, %d]""" % (tNew[0], tNew[-1], tOld[0], tOld[-1])            
+            tOld = [%d, %d]""" % (tNew[0], tNew[-1], tOld[0], tOld[-1])
             return (False, min(tOld[-1], tNew[-1]), msg)
 
         if (abs(tOld[0]-tNew[0]) > 1E-5):
             msg = """The new results and the reference results have a different start time.
             tNew = [%d, %d]
-            tOld = [%d, %d]""" % (tNew[0], tNew[-1], tOld[0], tOld[-1])            
+            tOld = [%d, %d]""" % (tNew[0], tNew[-1], tOld[0], tOld[-1])
             return (False, min(tOld[0], tNew[0]), msg)
-        
+
         timMaxErr = 0
 
         tol=1E-3  #Tolerance
@@ -717,7 +723,7 @@ len(yNew)    = %d""" % (filNam, varNam, len(tGriOld), len(tGriNew), len(yNew)))
         if (varNam.endswith("heatPort.T") or varNam.endswith("heatPort.Q_flow")) and (len(yInt) == 2) \
         and len(yOld) != len(yInt):
             yInt = np.ones(len(yOld)) * yInt[0]
-            
+
         # Compute error for the variable with name varNam
         if len(yOld) != len(yInt):
             # If yOld has two points, by yInt has more points, then
@@ -728,7 +734,7 @@ len(yNew)    = %d""" % (filNam, varNam, len(tGriOld), len(tGriNew), len(yNew)))
                 yOld = Plotter.interpolate(t, tOld, yOld)
             # If yInt has only two data points, but yOld has more, then interpolate yInt
             elif len(yInt) == 2 and len(yOld) == self._nPoi:
-                yInt = Plotter.interpolate(t, [tOld[0], tOld[-1]], yInt)            
+                yInt = Plotter.interpolate(t, [tOld[0], tOld[-1]], yInt)
             else:
                 raise ValueError("""Program error, yOld and yInt have different lengths.
   Result file : %s
@@ -968,6 +974,7 @@ len(yNew)    = %d""" % (filNam, varNam, len(tGriOld), len(tGriNew), len(yNew)))
             plt.clf()
             for pai in yS:
                 iPlo += 1
+
                 plt.subplot(nPlo, 1, iPlo)
                 # Iterate over the variable names that are to be plotted together
                 color=['k', 'r', 'b', 'g', 'c', 'm']
@@ -1005,7 +1012,20 @@ len(yNew)    = %d""" % (filNam, varNam, len(tGriOld), len(tGriNew), len(yNew)))
                 plt.grid(True)
                 if iPlo == 1:
                     plt.title(matFilNam)
+
+            # Store the graphic objects.
+            # The first plot is shown using the default size.
+            # Afterwards, the plot is resized to have the same size as
+            # the previous plot.
+            gcf = plt.gcf()
+            if self._figSize is not None:
+                gcf.set_size_inches(self._figSize, forward=True)
+
+            # Display the plot
             plt.show()
+            # Store the size for reuse in the next plot.
+            self._figSize=gcf.get_size_inches()
+
             while not (ans == "n" or ans == "y" or ans == "Y" or ans == "N"):
                 ans = raw_input("             Enter: y(yes), n(no), Y(yes for all), N(no for all): ")
             if ans == "y" or ans == "Y":
@@ -1087,7 +1107,7 @@ len(yNew)    = %d""" % (filNam, varNam, len(tGriOld), len(tGriNew), len(yNew)))
             write the error messages to ``self._reporter``.
         '''
         import json
-        
+
         # Read the json file with the statistics
         fil = open(self._statistics_log, "r")
         stat = json.load(fil)['testCase']
@@ -1098,45 +1118,63 @@ len(yNew)    = %d""" % (filNam, varNam, len(tGriOld), len(tGriNew), len(yNew)))
         iFMU = 0
         iJac = 0
         iCon = 0
+        iRed = 0
+        iTyp = 0
+        iCom = 0
         iIni = 0
         checkedFMU = False
         # Check for errors
         for ele in stat:
             if ele['check']['result'] is False:
                 iChe = iChe + 1
-                self._reporter.writeError("'%s' failed model check." % ele["model"])
+                self._reporter.writeError("Model check failed for '%s'." % ele["model"])
             if ele['simulate']['result'] is False:
                 iSim = iSim + 1
-                self._reporter.writeError("'%s' failed to simulate." % ele["simulate"]["command"])
+                self._reporter.writeError("Simulation failed for '%s'." % ele["simulate"]["command"])
             else:
                 # Simulation succeeeded. Check for problems.
                 if ele['simulate']["numerical Jacobians"] > 0:
-                    self._reporter.writeWarning("'%s' had a numerical Jacobian." % ele["simulate"]["command"])
+                    self._reporter.writeWarning("Numerical Jacobian in '%s'." % ele["simulate"]["command"])
                     iJac = iJac + 1
                 if ele['simulate']["unused connector"] > 0:
-                    self._reporter.writeWarning("'%s' had unused connector variables." % ele["simulate"]["command"])
+                    self._reporter.writeWarning("Unused connector variables in '%s'." % ele["simulate"]["command"])
                     iCon = iCon + 1
+                if ele['simulate']["redundant consistent initial conditions"] > 0:
+                    self._reporter.writeWarning("Redundant consistent initial conditions in '%s'." % ele["simulate"]["command"])
+                    iRed = iRed + 1
+                if ele['simulate']["type inconsistent definition equations"] > 0:
+                    self._reporter.writeWarning("Type inconsistent definition equations in '%s'." % ele["simulate"]["command"])
+                    iTyp = iTyp + 1
+                if ele['simulate']["type incompatibility"] > 0:
+                    self._reporter.writeWarning("Type incompabitibility in '%s'." % ele["simulate"]["command"])
+                    iCom = iCom + 1
                 if ele['simulate']["unspecified initial conditions"] > 0:
-                    self._reporter.writeWarning("'%s' had unspecified initial conditions." % ele["simulate"]["command"])
+                    self._reporter.writeWarning("Unspecified initial conditions in '%s'." % ele["simulate"]["command"])
                     iIni = iIni + 1
             if ele.has_key('FMUExport'):
                 if ele['FMUExport']['result'] is False:
                     iFMU = iFMU + 1
-                    self._reporter.writeError("'%s' FMU export failed." % ele["model"])
+                    self._reporter.writeError("FMU export failed for '%s'." % ele["model"])
                 checkedFMU = True
 
         if iChe > 0:
-            print "Number of models that failed check               :", iChe
+            print "Number of models that failed check                           :", iChe
         if iSim > 0:
-            print "Number of models that failed to simulate         :", iSim
+            print "Number of models that failed to simulate                     :", iSim
         if iJac > 0:
-            print "Number of models with numerical Jacobian         :", iJac
+            print "Number of models with numerical Jacobian                     :", iJac
         if iCon > 0:
-            print "Number of models with ununsed connector variables:", iCon
+            print "Number of models with ununsed connector variables            :", iCon
+        if iRed > 0:
+            print "Number of models with redundant consistent initial conditions:", iRed
+        if iTyp > 0:
+            print "Number of models with type inconsistent definition equations :", iTyp
+        if iCom > 0:
+            print "Number of models with incompatible types                     :", iCom
         if iIni > 0:
-            print "Number of models with unspecified initial conditions:", iIni
+            print "Number of models with unspecified initial conditions         :", iIni
         if iFMU > 0:
-            print "Number of models that failed to export as an FMU :", iFMU
+            print "Number of models that failed to export as an FMU             :", iFMU
         if not checkedFMU:
             print "FMU export was not tested."
 
@@ -1251,13 +1289,13 @@ len(yNew)    = %d""" % (filNam, varNam, len(tGriOld), len(tGriNew), len(yNew)))
 
         def _printEndOfJsonItem(isLastItem, closeElement, fileHandle, logFileName):
             if isLastItem:
-                fileHandle.write("Modelica.Utilities.Streams.print(\"    }\", \"%s\")\n" % logFileName);                
-                fileHandle.write("Modelica.Utilities.Streams.print(\"  }\", \"%s\")\n" % logFileName);                                
+                fileHandle.write("Modelica.Utilities.Streams.print(\"    }\", \"%s\")\n" % logFileName);
+                fileHandle.write("Modelica.Utilities.Streams.print(\"  }\", \"%s\")\n" % logFileName);
                 fileHandle.write("Modelica.Utilities.Streams.print(\"]}\", \"%s\")\n" % logFileName);
             else:
                 if closeElement:
-                    fileHandle.write("Modelica.Utilities.Streams.print(\"    }\", \"%s\")\n" % logFileName);                
-                fileHandle.write("Modelica.Utilities.Streams.print(\"  },\", \"%s\")\n" % logFileName);                
+                    fileHandle.write("Modelica.Utilities.Streams.print(\"    }\", \"%s\")\n" % logFileName);
+                fileHandle.write("Modelica.Utilities.Streams.print(\"  },\", \"%s\")\n" % logFileName);
 
 
 
@@ -1290,9 +1328,9 @@ len(yNew)    = %d""" % (filNam, varNam, len(tGriOld), len(tGriNew), len(yNew)))
                 runFil.write("Modelica.Utilities.Files.remove(\"%s\");\n" % self._simulator_log_file)
                 # Store the variable for pedantic mode
                 runFil.write("OriginalAdvancedPedanticModelica = Advanced.PedanticModelica;\n")
-            
+
             runFil.write("Modelica.Utilities.Files.remove(\"%s\");\n" % self._statistics_log)
-            
+
             runFil.write(r"""
 Modelica.Utilities.Streams.print("{\"testCase\" : [", "%s");
 """ % self._statistics_log)
@@ -1316,22 +1354,22 @@ Modelica.Utilities.Streams.print("{\"testCase\" : [", "%s");
                     absMosFilNam = os.path.join(self._temDir[iPro], mosFilNam)
 
                     values = {"mosWithPath": mosFilNam,
-                              "checkCommand": self._getModelCheckCommand(absMosFilNam),                                  
+                              "checkCommand": self._getModelCheckCommand(absMosFilNam),
                               "checkCommandString": self._getModelCheckCommand(absMosFilNam).replace('\"', r'\\\"'),
                               "scriptDir": self._data[i]['ScriptDirectory'],
                               "scriptFile": self._data[i]['ScriptFile'],
                               "modelName": self._data[i]['modelName'],
                               "modelName_underscore":  self._data[i]['modelName'].replace(".", "_"),
                               "statisticsLog": self._statistics_log,
-                              "simulatorLog": self._simulator_log_file} 
+                              "simulatorLog": self._simulator_log_file}
 
-                    
+
                     # Add checkModel(...) in pedantic mode
                     if self._modelicaCmd == 'dymola':
                         # Delete command log, modelName.simulation.log and dslog.txt
                         runFil.write("Modelica.Utilities.Files.remove(\"%s.simulator.log\");\n" % values["modelName"])
                         runFil.write("Modelica.Utilities.Files.remove(\"dslog.txt\");\n")
-                        runFil.write("clearlog();\n")                        
+                        runFil.write("clearlog();\n")
                         runFil.write("Advanced.PedanticModelica = true;\n")
                         runFil.write("Advanced.PedanticModelica = OriginalAdvancedPedanticModelica;\n")
 
@@ -1345,7 +1383,7 @@ Modelica.Utilities.Streams.print("{\"testCase\" : [", "%s");
                         # scan this log file for errors.
                         # This is needed as RunScript returns true even if the simulation failed.
                         template = r"""
-rCheck = {checkCommand};                        
+rCheck = {checkCommand};
 rScript=RunScript("Resources/Scripts/Dymola/{scriptDir}/{scriptFile}");
 savelog("{modelName}.simulator.log");
 if Modelica.Utilities.Files.exist("dslog.txt") then
@@ -1353,7 +1391,7 @@ if Modelica.Utilities.Files.exist("dslog.txt") then
 end if;
 """
                         runFil.write(template.format(**values))
-                        
+
                         if self._include_fmu_test:
                             template = r"""
 rTran=translateModelFMU("{modelName}", false, "", "2", "me", false);
@@ -1372,7 +1410,7 @@ Modelica.Utilities.Streams.print("        \"result\"  : " + String(rCheck), "{st
 Modelica.Utilities.Streams.print("      }},", "{statisticsLog}");
 """
                         runFil.write(template.format(**values))
-                        
+
                         template = r"""
 if Modelica.Utilities.Files.exist("{modelName}.dslog.log") then
   lines=Modelica.Utilities.Streams.readFile("{modelName}.dslog.log");
@@ -1381,17 +1419,23 @@ else
   Modelica.Utilities.Streams.print("dslog.txt was not generated.", "{modelName}.log");
   iSuc=0;
 end if;
-if Modelica.Utilities.Files.exist("{modelName}.simulator.log") then  
+if Modelica.Utilities.Files.exist("{modelName}.simulator.log") then
   lines=Modelica.Utilities.Streams.readFile("{modelName}.simulator.log");
   iJac=sum(Modelica.Utilities.Strings.count(lines, "Number of numerical Jacobians: 0"));
-  lJac=sum(Modelica.Utilities.Strings.count(lines, "Number of numerical Jacobians:"));  
+  lJac=sum(Modelica.Utilities.Strings.count(lines, "Number of numerical Jacobians:"));
   iCon=sum(Modelica.Utilities.Strings.count(lines, "Warning: The following connector variables are not used in the model"));
-  iIni=sum(Modelica.Utilities.Strings.count(lines, "Dymola has selected default initial condition"));  
+  iRed=sum(Modelica.Utilities.Strings.count(lines, "Redundant consistent initial conditions:"));
+  iTyp=sum(Modelica.Utilities.Strings.count(lines, "Type inconsistent definition equation"));
+  iCom=sum(Modelica.Utilities.Strings.count(lines, "but they must be compatible"));
+  iIni=sum(Modelica.Utilities.Strings.count(lines, "Dymola has selected default initial condition"));
 else
   Modelica.Utilities.Streams.print("dslog.txt was not generated.", "{modelName}.simulator.log");
   iJac=0;
   lJac=0;
   iCon=0;
+  iRed=0;
+  iTyp=0;
+  iCom=0;
   iIni=0;
 end if;
 Modelica.Utilities.Streams.print("      \"simulate\" : {{", "{statisticsLog}");
@@ -1399,24 +1443,27 @@ Modelica.Utilities.Streams.print("        \"command\" : \"RunScript(\\\"Resource
 Modelica.Utilities.Streams.print("        \"result\"  : " + String(iSuc > 0) + ",", "{statisticsLog}");
 Modelica.Utilities.Streams.print("        \"numerical Jacobians\"  : " + String(iJac-lJac) + ",", "{statisticsLog}");
 Modelica.Utilities.Streams.print("        \"unused connector\"  : " + String(iCon) + ",", "{statisticsLog}");
-Modelica.Utilities.Streams.print("        \"unspecified initial conditions\"  : " + String(iIni > 0), "{statisticsLog}");
+Modelica.Utilities.Streams.print("        \"redundant consistent initial conditions\"    : " + String(iRed) + ",", "{statisticsLog}");
+Modelica.Utilities.Streams.print("        \"type inconsistent definition equations\"     : " + String(iTyp) + ",", "{statisticsLog}");
+Modelica.Utilities.Streams.print("        \"type incompatibility\"                       : " + String(iCom) + ",", "{statisticsLog}");
+Modelica.Utilities.Streams.print("        \"unspecified initial conditions\"             : " + String(iIni > 0), "{statisticsLog}");
 """
                         runFil.write(template.format(**values))
-                        _printEndOfJsonItem(isLastItem and (not self._include_fmu_test), 
-                                            not self._include_fmu_test, 
-                                            runFil, 
+                        _printEndOfJsonItem(isLastItem and (not self._include_fmu_test),
+                                            not self._include_fmu_test,
+                                            runFil,
                                             self._statistics_log);
-                        
-                        if self._include_fmu_test:                            
+
+                        if self._include_fmu_test:
                             template = r"""
 Modelica.Utilities.Streams.print("      \"FMUExport\" : {{", "{statisticsLog}");
 Modelica.Utilities.Streams.print("        \"command\" : \"translateModelFMU(\\\"{modelName}\\\", false, \\\"\\\", \\\"2\\\", \\\"me\\\", false);\",", "{statisticsLog}");
 Modelica.Utilities.Streams.print("        \"result\"  : " + String(rTran == "{modelName_underscore}"), "{statisticsLog}");
 """
                             runFil.write(template.format(**values))
-                            _printEndOfJsonItem(isLastItem, 
-                                                True, 
-                                                runFil, 
+                            _printEndOfJsonItem(isLastItem,
+                                                True,
+                                                runFil,
                                                 self._statistics_log);
 
                     elif self._modelicaCmd == 'omc':
@@ -1427,7 +1474,7 @@ getErrorString();
                         runFil.write(template.format(**values))
                     self._removePlotCommands(absMosFilNam)
                     nUniTes = nUniTes + 1
-                    iItem = iItem + 1                    
+                    iItem = iItem + 1
             runFil.write("Modelica.Utilities.System.exit();\n")
             runFil.close()
 
@@ -1509,7 +1556,7 @@ getErrorString();
         import functools
         import json
         import glob
-        
+
         #import pdb;pdb.set_trace()
 
         self.checkPythonModuleAvailability()
@@ -1607,8 +1654,8 @@ getErrorString();
             # Dump an array of testCase objects
             json.dump({"testCase": stat}, logFil, indent=4, separators=(',', ': '))
             logFil.close()
-           
-            
+
+
         # check logfile if omc
         if self._modelicaCmd == 'omc':
             self._analyseOMStats(filename = self._simulator_log_file, nModels=len(self._data))
@@ -1646,7 +1693,7 @@ getErrorString();
 
         # Delete statistics file
         os.remove(self._statistics_log)
-                
+
         return retVal
 
     def _get_test_models(self, folder=None, packages=None):
@@ -1790,11 +1837,11 @@ getErrorString();
                         else:
                             stats[mo_file]['sim_ok'] = True
                             stats[mo_file]['sim_log'] = mystdout.getvalue()
-                            
+
                     else:
                         stats[mo_file]['sim_ok'] = False
                         stats[mo_file]['sim_log'] = 'Not attempted'
-                
+
                 sys.stdout = old_stdout
                 mystdout.close()
             else:
@@ -1816,7 +1863,7 @@ getErrorString();
         """
         Analyse the statistics dictionary resulting from
         a _test_Jmodelica() call.
-        
+
         :param load: Set to ``True`` to load the model from the FMU.
         :param simulate: Set to ``True`` to cause the model to be simulated.
         """
@@ -1846,25 +1893,25 @@ successfully (={:.1%})"\
                       nbr_cmpl, float(nbr_cmpl)/float(nbr_tot))
         if load:
             print "  * {} loaded successfully (={:.1%})".format(nbr_load, float(nbr_load)/float(nbr_tot))
-        
-        if simulate: 
+
+        if simulate:
             print "  * {} simulated successfully (={:.1%})".format(nbr_sim, float(nbr_sim)/float(nbr_tot))
-            
+
         print "\nFailed compilation for the following models:"
         for p in list_failed_cmpl(self._jmstats):
             print "  * {}".format(p.split(os.sep)[-1].split('.mo')[0])
 
-        if load:            
+        if load:
             print "\nFailed loading for the following models:"
             for p in list_failed_load(self._jmstats):
                 print "  * {}".format(p.split(os.sep)[-1].split('.mo')[0])
-                
-        if simulate:            
+
+        if simulate:
             print "\nFailed simulation for the following models:"
             for p in list_failed_sim(self._jmstats):
                 print "  * {}".format(p.split(os.sep)[-1].split('.mo')[0])
 
-        print "\nMore detailed information is stored in self._jmstats"        
+        print "\nMore detailed information is stored in self._jmstats"
         print 70*'#'
 
     def _writeOMRunScript(self, worDir, models, cmpl, simulate):
@@ -1965,9 +2012,9 @@ successfully (={:.1%})"\
 
         mosfile = self._writeOMRunScript(worDir=worDir, models=self._ommodels,
                                          cmpl=cmpl, simulate=simulate)
-        
+
         env = os.environ.copy() # will be passed to the subprocess.Popen call
-        
+
         # Check whether OPENMODELICALIBRARY is set.
         # If it is not set, try to use /usr/lib/omlibrary if it exists.
         # if it does not exist, stop with an error.
@@ -1984,7 +2031,7 @@ successfully (={:.1%})"\
         # get the executable for omc, depending on platform
         if sys.platform == 'win32':
             try:
-                omc = os.path.join(env['OPENMODELICAHOME'], 'bin', 'omc') 
+                omc = os.path.join(env['OPENMODELICAHOME'], 'bin', 'omc')
             except KeyError:
                 raise OSError("Environment flag 'OPENMODELICAHOME' must be set")
         else:
@@ -2016,7 +2063,7 @@ successfully (={:.1%})"\
             print "Starting analysis of logfile"
             f = open(logFilNam, 'r')
             self._omstats = f.readlines()
-            f.close()            
+            f.close()
             self._analyseOMStats(lines=self._omstats, models=self._ommodels, simulate=simulate)
 
             # Delete temporary directories
@@ -2028,20 +2075,20 @@ successfully (={:.1%})"\
         """
         Analyse the log file of the OM compatibility test.
 
-        :param lines: lines of the log file. 
+        :param lines: lines of the log file.
         :param nModels: number of models that were tested.
         :param simulate: True if simulation was tested
-        
-        A list of models is passed to this function because it is easier to 
+
+        A list of models is passed to this function because it is easier to
         get an overview of the FAILED models based on a list of all tested
-        models.  
+        models.
         """
-        
+
         if lines is None:
             lines = self._omstats
         if models is None:
             models = self._ommodels
-        
+
         check_ok, sim_ok = 0, 0
         check_nok, sim_nok = 0, 0
         models_check_ok, models_check_nok, models_sim_ok, models_sim_nok = [],[],[],[]
@@ -2062,26 +2109,26 @@ successfully (={:.1%})"\
                     # we never get in this clause
                     pass
 
-        # get the total number of tested models 
+        # get the total number of tested models
         check_nok = len(models) - check_ok
         sim_nok = len(models) - sim_ok
-            
+
         # get failed models
         models_check_nok = models[:]
         for m in models_check_ok:
             models_check_nok.remove(m)
-        
+
         if simulate:
             models_sim_nok = models[:]
             for m in models_sim_ok:
-                models_sim_nok.remove(m)            
-        
+                models_sim_nok.remove(m)
+
         print '\n'
         print 70*'#'
         print "Tested {} models:\n  * {} compiled successfully (={:.1%})"\
           .format(check_ok+check_nok,
                   check_ok, float(check_ok)/float(check_ok+check_nok))
-        if simulate: 
+        if simulate:
             print "  * {} simulated successfully (={:.1%})".format(sim_ok, float(sim_ok)/float(sim_ok+sim_nok))
 
         print "\nSuccessfully checked models:"
@@ -2090,7 +2137,7 @@ successfully (={:.1%})"\
         print "Failed model checks:"
         for m in models_check_nok:
             print "  * {}".format(m)
-        
+
         if simulate:
             print "\nSuccessfully simulated models:"
             for m in models_sim_ok:
@@ -2098,6 +2145,6 @@ successfully (={:.1%})"\
             print "Failed model simulations:"
             for m in models_sim_nok:
                 print "  * {}".format(m)
-                    
+
         print "\nMore detailed information is stored in self._omstats"
         print 70*'#'
