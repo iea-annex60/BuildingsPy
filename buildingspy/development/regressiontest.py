@@ -119,7 +119,16 @@ class Tester:
         # --------------------------
         # Class variables
         self._checkHtml = check_html
-        self._libHome=os.path.abspath(".")
+        # Set the default directory for the library.
+        # We are not calling setLibraryRoot because the
+        # function checks for the argument to be a valid
+        # library directory. This is also checked in run(),
+        # hence for the default value in this constructor,
+        # we do not verify whether the directory contains
+        # a valid library.
+        self._libHome = os.path.abspath(".")
+        self._rootPackage = os.path.join(self._libHome, 'Resources', 'Scripts', 'Dymola')
+
         self._modelicaCmd = executable
         # File to which the console output of the simulator is written to
         self._simulator_log_file = "simulator.log"
@@ -156,11 +165,9 @@ class Tester:
         self._data = []
         self._reporter = rep.Reporter(os.path.join(os.getcwd(), "unitTests.log"))
 
-        self._rootPackage = os.path.join(self._libHome, 'Resources', 'Scripts', 'Dymola')
-
         # By default, do not include export of FMUs.
         self._include_fmu_test = False
-        
+
         # Variable that contains the figure size in inches.
         # This variable is set after the first plot has been rendered.
         # If a user resizes the plot, then the next plot will be displayed with
@@ -248,6 +255,7 @@ class Tester:
         :param fmu_export: Set to ``True`` to test the export of FMUs.
 
         To run the unit tests and also test the export of FMUs, type
+
         >>> import os
         >>> import buildingspy.development.regressiontest as r
         >>> r = r.Tester()
@@ -420,6 +428,49 @@ class Tester:
 
         self._rootPackage = rooPat
 
+    def writeOpenModelicaResultDictionary(self):
+        ''' Write in ``Resources/Scripts/OpenModelica/compareVars`` files whose
+        name are the name of the example model, and whose content is::
+
+            compareVars :=
+              {
+                "controler.y",
+                "sensor.T",
+                "heater.Q_flow"
+              };
+
+        These files are then used in the regression testing that is done by the
+        OpenModelica development team.
+
+        '''
+        # Create the data dictionary.
+        self._data = []
+        self.setDataDictionary();
+
+        # Directory where files will be stored
+        desDir=os.path.join(self._libHome, "Resources", "Scripts", "OpenModelica", "compareVars")
+        if not os.path.exists(desDir):
+            os.makedirs(desDir)
+        # Loop over all experiments and write the files.
+        for experiment in self._data:
+            if 'modelName' in experiment and experiment['mustSimulate']:
+                if 'ResultVariables' in experiment:
+                    # For OpenModelica, don't group variables into those
+                    # who should be plotted together, as all are plotted in
+                    # the same plot.
+                    res = []
+                    for pair in experiment['ResultVariables']:
+                        for var in pair:
+                            res.append(var)
+                    # Content of the file.
+                    filCon = "compareVars :=\n  {\n    \"%s\"\n  };\n" % ("\",\n    \"".join(res))
+                    # File name.
+                    filNam = os.path.join(desDir, experiment['modelName'] + ".mos")
+                    # Write the file
+                    with open(filNam, 'w') as fil:
+                        fil.write(filCon)
+
+
     def setDataDictionary(self):
         ''' Build the data structures that are needed to parse the output files.
 
@@ -510,7 +561,8 @@ class Tester:
                         # search for the result file
                         for lin in Lines:
                             if 'resultFile=\"' in lin:
-                                matFil = re.search('(?<=resultFile=\")\w+', lin).group()
+                                matFil = re.search('(?<=resultFile=\")[a-zA-Z0-9_\.]+', lin).group()
+                                # Add the .mat extension as this is not included in the resultFile entry.
                                 matFil =  matFil + '.mat'
                                 break
                         # Some *.mos file only contain plot commands, but no simulation.
@@ -519,11 +571,12 @@ class Tester:
                         if len(matFil) == 0:
                             for lin in Lines:
                                 if 'filename=\"' in lin:
-                                    matFil = re.search('(?<=filename=\")\w+', lin).group()
-                                    matFil = matFil + '.mat'
+                                    # Note that the filename entry already has the .mat extension.
+                                    matFil = re.search('(?<=filename=\")[a-zA-Z0-9_\.]+', lin).group()
                                     break
                         if len(matFil) == 0:
                             raise  ValueError('Did not find *.mat file in ' + mosFil)
+
                         dat['ResultFile'] = matFil
                         self._data.append(dat)
         # Make sure we found at least one unit test
@@ -1306,8 +1359,13 @@ len(yNew)    = %d""" % (filNam, varNam, len(tGriOld), len(tGriNew), len(yNew)))
 
         nUniTes = 0
 
+        # Count how many tests need to be simulated.
         nTes = len(self._data)
-        for iPro in range(min(self._nPro, nTes)):
+        # Reduced the number of processors if there are fewer examples than processors
+        if nTes < self._nPro:
+            self.setNumberOfThreads(nTes)
+
+        for iPro in range(self._nPro):
 
             runFil=open(os.path.join(self._temDir[iPro], self.getLibraryName(), "runAll.mos"), 'w')
             runFil.write("// File autogenerated for process "
@@ -1358,15 +1416,15 @@ Modelica.Utilities.Streams.print("{\"testCase\" : [", "%s");
                                              self._data[i]['ScriptFile'])
                     absMosFilNam = os.path.join(self._temDir[iPro], mosFilNam)
 
-                    values = {"mosWithPath": mosFilNam,
-                              "checkCommand": self._getModelCheckCommand(absMosFilNam),
+                    values = {"mosWithPath": mosFilNam.replace("\\","/"),
+                              "checkCommand": self._getModelCheckCommand(absMosFilNam).replace("\\","/"),
                               "checkCommandString": self._getModelCheckCommand(absMosFilNam).replace('\"', r'\\\"'),
-                              "scriptDir": self._data[i]['ScriptDirectory'],
-                              "scriptFile": self._data[i]['ScriptFile'],
-                              "modelName": self._data[i]['modelName'],
+                              "scriptDir": self._data[i]['ScriptDirectory'].replace("\\","/"),
+                              "scriptFile": self._data[i]['ScriptFile'].replace("\\","/"),
+                              "modelName": self._data[i]['modelName'].replace("\\","/"),
                               "modelName_underscore":  self._data[i]['modelName'].replace(".", "_"),
-                              "statisticsLog": self._statistics_log,
-                              "simulatorLog": self._simulator_log_file}
+                              "statisticsLog": self._statistics_log.replace("\\","/"),
+                              "simulatorLog": self._simulator_log_file.replace("\\","/")}
 
 
                     # Add checkModel(...) in pedantic mode
@@ -1477,6 +1535,8 @@ runScript("Resources/Scripts/Dymola/{scriptDir}/{scriptFile}");
 getErrorString();
 """)
                         runFil.write(template.format(**values))
+                    else:
+                        print("******" + self._data[i]['ScriptFile'] + " does not require a simulation.")
                     self._removePlotCommands(absMosFilNam)
                     nUniTes = nUniTes + 1
                     iItem = iItem + 1
@@ -1568,6 +1628,13 @@ getErrorString();
 
         self.setDataDictionary()
 
+        # Remove all data that do not require a simulation
+        # Otherwise, some processes may have no simulation to run and then
+        # the json output file would have an invalid syntax
+        for ele in self._data:
+            if not ele['mustSimulate']:
+                self._data.remove(ele)
+
         # Reset the number of processors to use no more processors than there are
         # examples to be run
         self.setNumberOfThreads(min(multiprocessing.cpu_count(), len(self._data), self._nPro))
@@ -1643,7 +1710,7 @@ getErrorString();
             for d in self._temDir:
                 temLogFilNam = os.path.join(d, self.getLibraryName(), self._statistics_log)
                 if os.path.exists(temLogFilNam):
-                    temSta=open(temLogFilNam, 'r')
+                    temSta=open(temLogFilNam.replace('Temp\tmp','Temp\\tmp'), 'r')
                     try:
                         cas = json.load(temSta)["testCase"]
                         # Iterate over all test cases of this output file
